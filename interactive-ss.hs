@@ -1,5 +1,7 @@
 import System.IO
 import System.Random
+import Data.List hiding (group)
+
 
 -- Helper types
 type Polynomial = [Integer]
@@ -10,40 +12,38 @@ type Generator = Integer
 data State = State { 
               poly :: Polynomial, 
               shares :: [Share], 
+              group :: Integer,
               commitments :: [Integer],
               generator :: Integer,
               exitFlag :: Bool } deriving (Eq)
 
-emptyState = createState [] [] [] 0
+emptyState = createState [] [] 0 [] 0
 
-createState poly shares commitments generator = 
+createState poly shares group commitments generator = 
   (State {poly = poly, 
           shares = shares, 
+          group = group,
           commitments = commitments, 
           generator = generator,
           exitFlag = False})
 
 -- Text formatting
 instance Show State where
-  show s 
+  show s
     | s == emptyState = "No secret initialized"
     | otherwise = 
-        "\n" ++ statePolyString s ++ "\n" 
+        "\n" ++ polyToString (poly s) ++ "\n" 
         ++ "g = " ++ show (generator s) ++ "\n"
+        ++ "|Zn*| = " ++ show (group s - 1) ++ "\n" 
         ++ stateSharesString s ++ "\n"
         ++ stateCommitmentsString s ++ "\n"
 
-statePolyString :: State -> String
-statePolyString s = 
-  "p(x) = " ++ (prettyShow $ [0..] `zip` poly s)
-    where prettyShow [(0, s)] = show s
-          prettyShow [(1, s)] = show s ++ "x"
-          prettyShow [(i, s)] = show s ++ "x^" ++ show i
-          prettyShow ((0, s):ss) = show s ++ " + " ++ prettyShow ss
-          prettyShow ((1, s):ss) = show s ++ "x + " ++ prettyShow ss
-          prettyShow ((i, s):ss) = show s ++ "x^" ++ show i ++ " + " ++ prettyShow ss
-
-            
+polyToString :: Polynomial -> String
+polyToString poly = 
+  "p(x) = " ++ (unwords . intersperse "+" . map termShow $ [0..] `zip` poly)
+    where termShow (0, term) = show term
+          termShow (1, term) = show term ++ "x"
+          termShow (exponent, term) = show term ++ "x^" ++ show exponent
 
 stateSharesString :: State -> String
 stateSharesString s = 
@@ -57,18 +57,67 @@ stateCommitmentsString s =
   "Commitment: " ++ show (commitments s)
 
 -- Secret Sharing logic
-calculateKeySpace :: Integer -> Integer
-calculateKeySpace value = 
-  let c = ceiling . logBase 2 . fromIntegral $ value in
-  max 16 c
+-- 8 bits, 16 bits, 32 bits, 64 bits, 128 bits, 256 bits, 512 bits, and 1024 bits safe primes
+-- Note that the code is probably too slow for most of these
+safePrimes = [ 
+  7,
+  227,
+  51407,
+  3260360843,
+  16855205958470386187, 
+  336809720957688272968116945989114351147, 
+  100932443431929982816198720791693327175050602902703518280128748060882240133359,
+  12754709477010474220782419068422931704491832184660376415376491296628356815102803251176717402299823532992995848442800807715447900267393272594855354516567627,
+  175150239024644694161690642159191781910910463333909797962399641113644974011784097900783034940881889044344867716330701716017301210554996353255650234107823397774674975724010953046911785617581821174422071047728368424235425612139451285532133680637314115431194717329268208256980317293902804291370699809368006311239]
 
-createPolynomial :: (RandomGen g) => Integer -> Int -> g -> Integer -> Polynomial
+selectGroup :: Integer -> Integer
+selectGroup value = f value safePrimes
+  where f v primes 
+          | v < head primes = head primes
+          | otherwise = f v (tail primes)
+
+selectGenerator :: (RandomGen g) => g -> Integer -> Integer
+selectGenerator gen group =  
+    let (g, gen') = random gen 
+        g' = if g == 1 then 2 else g `mod` group in
+    if (g'^q) `mod` group /= 1  || (g'^2) `mod` group /= 1 then g' else selectGenerator gen' group
+      where q = (group-1) `div` 2
+
+createPolynomial :: (RandomGen g) => Integer -> Int -> g -> Integer -> Polynomial 
 createPolynomial intersect degree g q = 
-  intersect : (take degree . randomRs (0, q) $ g)
+  intersect : (take degree . randomRs (1, q) $ g)
 
 evaluatePoly :: Polynomial -> Integer -> Integer
 evaluatePoly poly x = 
   sum . map (\(a,i) -> a * x^i) $ poly `zip` [0..]
+
+-- reconstruct helper functions
+termElems :: [Int] -> [(Integer, [Integer])]
+termElems xjs = map (\xj -> (xj, filter (/= xj) xjs')) xjs'
+  where xjs' = map fromIntegral xjs
+
+calcTerm :: Integer -> Integer -> Integer -> [Integer] -> Integer
+calcTerm fxj xj q xms = foldr (\xm s -> s * xm * (calcInverse (xm - xj) q)) fxj xms
+
+calcInverse :: Integer -> Integer -> Integer
+calcInverse a n = (x + n) `mod` n
+  where (_,x,_) = eGCD a' n
+        a' = if a < 0 then a + n else a
+
+eGCD :: Integer -> Integer -> (Integer, Integer, Integer)
+eGCD a b
+  | r == 0 = (b, 0, 1)
+  | otherwise = 
+      let (d, x, y) = eGCD b r in 
+      (d, y, x - y * q)
+    where q = a `div` b
+          r = a `mod` b
+
+reconstruct :: [Share] -> [Int] -> Integer -> Integer
+reconstruct shares parties q = 
+  let terms = termElems parties 
+      shares' = map (\p -> shares !! (p-1)) parties in
+  (foldr (\(fxj, (xj, xms))  s -> s + calcTerm fxj xj q xms) 0 $ shares' `zip` terms) `mod` q
 
 createCommitments :: Polynomial -> Integer -> Integer -> [Integer]
 createCommitments poly g q = map (\a -> g^a `mod` q) poly
@@ -76,6 +125,11 @@ createCommitments poly g q = map (\a -> g^a `mod` q) poly
 createShares :: Polynomial -> Integer -> [Share]
 createShares poly parties = 
   map (evaluatePoly poly) [1..parties]
+
+verifyShare :: [Integer] -> Integer -> Integer -> Integer -> Integer -> Bool
+verifyShare commitment share g i group =
+  g^share `mod` group == 5
+
 
 -- IO 
 prompt :: String -> IO Integer
@@ -93,16 +147,19 @@ promptS text = do
 initialize :: IO State
 initialize = do 
   secret <- prompt "Type the secret(integer): "
-  share_count <- prompt "Number of shares: "
+  share_count <- prompt "Number of shares to reconstruct: "
   parties <- prompt "Number of parties: " 
   seed <- prompt "Random seed: "
   let (g, g') = split $ mkStdGen (fromInteger seed)
-  let length = calculateKeySpace secret
-  let poly = createPolynomial secret (fromInteger share_count) g length
-  let shares = createShares poly parties
-  let generator = 2
-  let commitments = createCommitments poly generator length
-  return $ createState poly shares commitments generator
+  let group = selectGroup secret
+  let poly = createPolynomial secret (fromInteger share_count-1) g group
+  let shares = map (`mod` group) (createShares poly parties)
+  let generator = selectGenerator (snd . split $ g') group
+  print poly
+  print generator 
+  print group
+  let commitments = createCommitments poly generator group
+  return $ createState poly shares group commitments generator
 
 printHelp = 
   putStrLn "\nCommands:\n\
@@ -128,8 +185,20 @@ handleQuery state "print" = print state >> return state
 
 -- Parameterized queries
 handleQuery state query 
-  | command == "reconstruct" = return state
-  | command == "verify" = return state
+  | command == "reconstruct" = do 
+      let s = shares state
+      let parties = read parameter :: [Int]
+      let q = group state
+      let p = reconstruct s parties q
+      putStrLn ("Reconstructed secret = " ++ show p) 
+      return state
+  | command == "verify" = do
+      let g = generator state 
+      let party = read parameter :: Int
+      let ss = shares state
+      let share = ss !! (party - 1)
+      print (g^share `mod` group state)
+      return state
   | otherwise = do 
         putStrLn "Unknown command: Try \"help\"" 
         return state
