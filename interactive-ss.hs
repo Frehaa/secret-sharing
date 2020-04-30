@@ -126,13 +126,16 @@ createShares :: Polynomial -> Integer -> Group -> [Share]
 createShares poly parties group = 
   map ((`mod` group) . evaluatePoly poly) [1..parties]
 
-verifyShare :: [Integer] -> Share -> Generator -> Int -> Group -> Bool
-verifyShare commitments share g i group = 
-  (g^share `mod` group) == (mod (product vals) group)
-    where vals = map2 (^) $ commitments `zip` commitPowers
-          commitPowers = map (i'^) [0 .. length commitments - 1]
+verifyShare :: [Integer] -> Share -> Generator -> Int -> Group -> (Integer, Integer)
+verifyShare commitments share g i group = (x, y)
+    where x = g^share `mod` group
+          y = mod (product vals) group
+          vals = map2 (^) commitments commitPowers
+          commitPowers = map ((`mod` p) . (i'^)) [0 .. length commitments - 1]
+          p = (group - 1) `div` 2
           i' = fromIntegral i :: Integer
-          map2 f = map (uncurry f)
+          map2 f l1 l2  = map (uncurry f) $ l1 `zip` l2
+
 
 -- IO 
 prompt :: String -> IO Integer
@@ -153,7 +156,7 @@ initialize = do
   share_count <- prompt "Number of shares to reconstruct: "
   parties <- prompt "Number of parties: " 
   seed <- prompt "Random seed: "
-  let (gen, gen') = split $ mkStdGen (fromInteger seed)
+  let (gen, gen') = split . mkStdGen . fromInteger $ seed
   let group = selectGroup secret
   let q = (group - 1) `div` 2
   let poly = createPolynomial secret (fromInteger share_count-1) gen q
@@ -196,7 +199,8 @@ handleQuery state query
   | command == "verify" = do
       let party = read parameter :: Int
       let share = (shares state) !! (party - 1)
-      print $ verifyShare (commitments state) share (generator state) party (group state)
+      let (x, y) = verifyShare (commitments state) share (generator state) party (group state)
+      putStrLn $ show (generator state) ++ "^P(" ++ show party ++ ") = " ++ show x ++ (if x == y then " true" else " false")
       return state
   | otherwise = do 
         putStrLn "Unknown command: Try \"help\"" 
