@@ -62,7 +62,6 @@ stateCommitmentsString s =
 -- 8 bits, 16 bits, 32 bits, 64 bits, 128 bits, 256 bits, 512 bits, and 1024 bits safe primes
 -- Note that the code is probably too slow for most of these
 safePrimes = [ 
-  7,
   167,
   227,
   51407,
@@ -121,8 +120,9 @@ eGCD a b
 reconstruct :: [Share] -> [Int] -> Group -> Integer
 reconstruct shares parties q = 
   let terms = termElems parties 
-      shares' = map (\p -> shares !! (p-1)) parties in
-  (foldr (\(fxj, (xj, xms)) s -> s + calcLagrangeTerm fxj xj q xms) 0 $ shares' `zip` terms) `mod` q
+      shares' = map (\p -> shares !! (p-1)) parties
+      lagrangeTerms = map (\(fxj, (xj, xms)) -> calcLagrangeTerm fxj xj q xms) (shares' `zip` terms) in
+  sum lagrangeTerms `mod` q
 
 createCommitments :: Polynomial -> Generator -> Group -> [Integer]
 createCommitments poly g q = map (\a -> g^a `mod` q) poly
@@ -163,9 +163,9 @@ initialize = do
   seed <- prompt "Random seed: "
   let (gen, gen') = split . mkStdGen . fromInteger $ seed
   let group = selectGroup secret
-  let q = (group - 1) `div` 2 -- Using q breaks reconstruct for some reason???
-  let poly = createPolynomial secret (fromInteger share_count-1) gen q -- group 
-  let shares = createShares poly parties q -- group
+  let q = (group - 1) `div` 2
+  let poly = createPolynomial secret (fromInteger share_count-1) gen q
+  let shares = createShares poly parties q
   let generator = selectGenerator gen' group
   let commitments = createCommitments poly generator group
   return $ createState poly shares group commitments generator
@@ -175,6 +175,7 @@ printHelp =
             \  initialize: Setup a new secret sharing\n\
             \  reconstruct: Reconstructs the secret from set of given shares (reconstruct [i,...,t])\n\
             \  verify: Verfies a given share (verify i)\n\
+            \  change_share: Changes the share of party i to value v (change_share i v)\n\
             \  print: Prints the polynomial, shares, commitments, and generator\n\
             \  help: Prints this help message\n\
             \  exit: Closes session\n"
@@ -196,7 +197,7 @@ handleQuery state "print" = print state >> return state
 handleQuery state query 
   | command == "reconstruct" = do 
       let parties = read parameter :: [Int]
-      let p = reconstruct (shares state) parties (group state)
+      let p = reconstruct (shares state) parties ((group state - 1) `div` 2)
       putStrLn ("Reconstructed secret = " ++ show p) 
       return state
   | command == "verify" = do
