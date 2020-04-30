@@ -202,10 +202,19 @@ handleQuery state query
       let (x, y) = verifyShare (commitments state) share (generator state) party (group state)
       putStrLn $ show (generator state) ++ "^P(" ++ show party ++ ") = " ++ show x ++ (if x == y then " true" else " false")
       return state
+  | command == "change_share" = do
+      let (p1, p2) = break (==' ') $ drop 1 parameter
+      let party = read p1 :: Int
+      let value = read p2 :: Integer
+      let ss' = change (party-1) (shares state) value
+      return  $ state {shares = ss'}
   | otherwise = do 
         putStrLn "Unknown command: Try \"help\"" 
         return state
     where (command, parameter) = break (==' ') query
+
+change i list v = 
+  let (pf, _:sf) = splitAt i list in pf ++ (v:sf)
 
 -- Cute tiny entrypoint 
 main = query emptyState
