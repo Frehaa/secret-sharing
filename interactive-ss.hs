@@ -62,6 +62,7 @@ stateCommitmentsString s =
 -- 8 bits, 16 bits, 32 bits, 64 bits, 128 bits, 256 bits, 512 bits, and 1024 bits safe primes
 -- Note that the code is probably too slow for most of these
 safePrimes = [ 
+  7,
   167,
   227,
   51407,
@@ -91,13 +92,17 @@ evaluatePoly poly x =
   sum . map (\(a,i) -> a * x^i) $ poly `zip` [0..]
 
 -- reconstruct helper functions
+-- Creates list of pair values for further lagrange calculations
 termElems :: [Int] -> [(Integer, [Integer])]
 termElems xjs = map (\xj -> (xj, filter (/= xj) xjs')) xjs'
   where xjs' = map fromIntegral xjs
 
-calcTerm :: Integer -> Integer -> Integer -> [Integer] -> Integer
-calcTerm fxj xj q xms = foldr (\xm s -> s * xm `div'` (xm - xj)) fxj xms
-  where div' n m = n * calcInverse m q
+-- Each term in lagrange is calculated as f(xj) * lj(x)
+-- lj(x) = product of xm / (xj - xm) over all values of xm
+calcLagrangeTerm :: Integer -> Integer -> Integer -> [Integer] -> Integer
+calcLagrangeTerm fxj xj q xms = fxj * product ljx
+  where ljx = map (\xm -> xm `div'` (xm - xj)) xms
+        div' n m = n * calcInverse m q
 
 calcInverse :: Integer -> Integer -> Integer
 calcInverse a n = (x + n) `mod` n
@@ -117,7 +122,7 @@ reconstruct :: [Share] -> [Int] -> Group -> Integer
 reconstruct shares parties q = 
   let terms = termElems parties 
       shares' = map (\p -> shares !! (p-1)) parties in
-  (foldr (\(fxj, (xj, xms)) s -> s + calcTerm fxj xj q xms) 0 $ shares' `zip` terms) `mod` q
+  (foldr (\(fxj, (xj, xms)) s -> s + calcLagrangeTerm fxj xj q xms) 0 $ shares' `zip` terms) `mod` q
 
 createCommitments :: Polynomial -> Generator -> Group -> [Integer]
 createCommitments poly g q = map (\a -> g^a `mod` q) poly
@@ -158,9 +163,9 @@ initialize = do
   seed <- prompt "Random seed: "
   let (gen, gen') = split . mkStdGen . fromInteger $ seed
   let group = selectGroup secret
-  let q = (group - 1) `div` 2
-  let poly = createPolynomial secret (fromInteger share_count-1) gen q
-  let shares = createShares poly parties q
+  let q = (group - 1) `div` 2 -- Using q breaks reconstruct for some reason???
+  let poly = createPolynomial secret (fromInteger share_count-1) gen q -- group 
+  let shares = createShares poly parties q -- group
   let generator = selectGenerator gen' group
   let commitments = createCommitments poly generator group
   return $ createState poly shares group commitments generator
@@ -190,10 +195,8 @@ handleQuery state "print" = print state >> return state
 -- Parameterized queries
 handleQuery state query 
   | command == "reconstruct" = do 
-      let s = shares state
       let parties = read parameter :: [Int]
-      let q = group state
-      let p = reconstruct s parties q
+      let p = reconstruct (shares state) parties (group state)
       putStrLn ("Reconstructed secret = " ++ show p) 
       return state
   | command == "verify" = do
