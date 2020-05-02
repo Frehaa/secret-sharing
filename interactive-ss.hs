@@ -1,5 +1,6 @@
 import System.IO
 import System.Random
+import Control.Monad
 import Data.List hiding (group)
 
 
@@ -59,18 +60,14 @@ stateCommitmentsString s =
   "Commitment: " ++ show (commitments s)
 
 -- Secret Sharing logic
--- 8 bits, 16 bits, 32 bits, 64 bits, 128 bits, 256 bits, 512 bits, and 1024 bits safe primes
--- Note that the code is probably too slow for most of these
+-- 2x 8 bits, 16 bits, 32 bits safe primes
+-- The code takes unreasonable amount of time for bigger primes
 safePrimes = [ 
   167,
   227,
   51407,
-  3260360843,
-  16855205958470386187, 
-  336809720957688272968116945989114351147, 
-  100932443431929982816198720791693327175050602902703518280128748060882240133359,
-  12754709477010474220782419068422931704491832184660376415376491296628356815102803251176717402299823532992995848442800807715447900267393272594855354516567627,
-  175150239024644694161690642159191781910910463333909797962399641113644974011784097900783034940881889044344867716330701716017301210554996353255650234107823397774674975724010953046911785617581821174422071047728368424235425612139451285532133680637314115431194717329268208256980317293902804291370699809368006311239]
+  3260360843]
+
 
 selectGroup :: Integer -> Integer
 selectGroup value = f value safePrimes
@@ -175,6 +172,7 @@ printHelp =
             \  initialize: Setup a new secret sharing\n\
             \  reconstruct: Reconstructs the secret from set of given shares (reconstruct [i,...,t])\n\
             \  verify: Verfies a given share (verify i)\n\
+            \  verify all: Verfies all parties\n\
             \  change_share: Changes the share of party i to value v (change_share i v)\n\
             \  print: Prints the polynomial, shares, commitments, and generator\n\
             \  help: Prints this help message\n\
@@ -199,6 +197,10 @@ handleQuery state query
       let parties = read parameter :: [Int]
       let p = reconstruct (shares state) parties ((group state - 1) `div` 2)
       putStrLn ("Reconstructed secret = " ++ show p) 
+      return state
+  | command == "verify" && parameter == " all" = do
+      let parties = length $ shares state
+      mapM (\i -> handleQuery state ("verify " ++ show i) ) [1..parties]
       return state
   | command == "verify" = do
       let party = read parameter :: Int
