@@ -125,6 +125,41 @@ corresponding to themself.
 
 \subsection{Reconstructing the Secret}
 
+To reconstruct the secret the parties share their points on the polynomial to
+recreate it. Usually this is done using Lagrange interpolation since it works in
+finite fields.
+
+Lagrange interpolation is calcuated as follows:
+
+% Insert formula
+
+Since we aren't interested in the whole polynomial, but just the intersect, it
+can be modified to be slightly more direct and efficient.
+
+In the implementation I have used eGCD to calculate the inverses of the elements
+needed to do the ``division`` in formula. 
+
+\subsection{Verifying the shares}
+
+To make the scheme verifiable for the parties such that a party know their share
+is valid, the Shamir Secret Sharing scheme is extended with additional
+``commitments`` that the parties receive. This is the difference between Shamir
+Secret Sharing scheme and Feldman's scheme. In Feldman's scheme we calculate an
+additional $n+1$ values for our $n$-degree polynomial using a prime order
+subgroup and a generator from this group. 
+
+In this scheme the coefficients we picked for our polynomial have to be part of
+this subgroup otherwise the scheme doesn't work. Feldman's scheme uses the fact
+that addition in the exponent follows some slightly different rules, to give an
+equation where party $i$ can verify that their share and the commitments match
+up. 
+
+
+% ... 
+
+When implemented over integers, at least in my application, this is
+excrutiatingly slow for even small groups eg. 16 bit. 
+
 \section{Performance}
 
 While good performance wasn't a goal of this project, and there are no messages
@@ -132,6 +167,12 @@ being transmitted over the network, it is still interesting to see how fast it
 is to reconstruct and verify different configurations of the protocol.
 
 \subsection{Reconstruct}
+
+% Setup some test for different sized primes / number of parties
+
 \subsection{Verify}
+
+% Setup some test for different sized primes / number of parties
+% Here the size of the primes will be very small, don't overdo
 
 \end{document} 
