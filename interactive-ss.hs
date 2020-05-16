@@ -1,6 +1,7 @@
 import System.IO
 import System.Random
 import Control.Monad
+import Data.Maybe (fromJust)
 import Data.List hiding (group)
 
 
@@ -9,6 +10,9 @@ type Polynomial = [Integer]
 type Share = Integer
 type Generator = Integer
 type Group = Integer
+
+-- Helper function
+map2 = zipWith
 
 -- State for managing all necessary values
 data State = State { 
@@ -43,25 +47,24 @@ instance Show State where
 
 polyToString :: Polynomial -> String
 polyToString poly = 
-  "p(x) = " ++ (unwords . intersperse "+" . map termShow $ [0..] `zip` poly)
-    where termShow (0, term) = show term
-          termShow (1, term) = show term ++ "x"
-          termShow (exponent, term) = show term ++ "x^" ++ show exponent
+  "p(x) = " ++ (unwords . intersperse "+" $ map2 termShow [0..] poly)
+    where termShow 0 term = show term
+          termShow 1 term = show term ++ "x"
+          termShow exponent term = show term ++ "x^" ++ show exponent
 
 stateSharesString :: State -> String
 stateSharesString s = 
-  "Shares:\n" ++ prettyShow ([1..] `zip` shares s)
-    where prettyShow ((i, s):ss) = 
-              "  p(" ++ show i ++ ") = " ++ show s ++ "\n" ++ prettyShow ss
-          prettyShow [] = ""
+  "Shares:\n" ++ unlines (map2 prettyShow (shares s) [1..])
+    where prettyShow s i = 
+              "  p(" ++ show i ++ ") = " ++ show s 
 
 stateCommitmentsString :: State -> String
 stateCommitmentsString s = 
   "Commitment: " ++ show (commitments s)
 
 -- Secret Sharing logic
--- 2x 8 bits, 16 bits, 32 bits safe primes
--- The code takes unreasonable amount of time for bigger primes
+-- 2x 8 bits, 16 bits, etc. to 1024 bits safe primes
+-- Calculating commitments take unreasonable amount of time for larger primes
 safePrimes = [ 
   167,
   227,
@@ -75,10 +78,7 @@ safePrimes = [
 
 
 selectGroup :: Integer -> Integer
-selectGroup value = f value safePrimes
-  where f v primes 
-          | v < head primes = head primes
-          | otherwise = f v (tail primes)
+selectGroup value = fromJust $ find (> value) safePrimes 
 
 selectGenerator :: (RandomGen g) => g -> Integer -> Integer
 selectGenerator gen group = r^2 `mod` group
@@ -86,24 +86,25 @@ selectGenerator gen group = r^2 `mod` group
 
 createPolynomial :: (RandomGen g) => Integer -> Int -> g -> Group -> Polynomial 
 createPolynomial intersect degree gen q = 
-  intersect : (take degree . randomRs (1, q-1) $ gen)
+  intersect : take degree (randomRs (1, q-1) gen)
 
 evaluatePoly :: Polynomial -> Integer -> Integer
-evaluatePoly poly x = 
-  sum . map (\(a,i) -> a * x^i) $ poly `zip` [0..]
+evaluatePoly poly x = sum $ map2 (\a i -> a * x^i) poly [0..]
 
 -- reconstruct helper functions
--- Creates list of pair values for further lagrange calculations
-termElems :: [Int] -> [(Integer, [Integer])]
-termElems xjs = map (\xj -> (xj, filter (/= xj) xjs')) xjs'
-  where xjs' = map fromIntegral xjs
+
+-- Used to simplify lagrange expression
+-- Creates list of elements of the form [(x, [y, z]), (y, [x, z]), ...]
+-- for all elements in list [x, y, z]
+termElems :: [Integer] -> [(Integer, [Integer])]
+termElems xjs = map (\xj -> (xj, filter (/= xj) xjs)) xjs
 
 -- Each term in lagrange is calculated as f(xj) * lj(x)
 -- lj(x) = product of xm / (xj - xm) over all values of xm
-calcLagrangeTerm :: Integer -> Integer -> Integer -> [Integer] -> Integer
-calcLagrangeTerm fxj xj q xms = fxj * product ljx
-  where ljx = map (\xm -> xm `div'` (xm - xj)) xms
-        div' n m = n * calcInverse m q
+calcLagrangeTerm :: Group -> Integer -> Integer -> [Integer] -> Integer
+calcLagrangeTerm q fxj xj xms = fxj * product ljx
+  where ljx = map (\xm -> xm // (xm - xj)) xms
+        (//) n m = n * calcInverse m q
 
 calcInverse :: Integer -> Integer -> Integer
 calcInverse a n = (x + n) `mod` n
@@ -121,9 +122,9 @@ eGCD a b
 
 reconstruct :: [Share] -> [Int] -> Group -> Integer
 reconstruct shares parties q = 
-  let terms = termElems parties 
-      shares' = map (\p -> shares !! (p-1)) parties
-      lagrangeTerms = map (\(fxj, (xj, xms)) -> calcLagrangeTerm fxj xj q xms) (shares' `zip` terms) in
+  let terms = termElems . map fromIntegral $ parties 
+      shares = map (\p -> shares !! (p-1)) parties
+      lagrangeTerms = map2 (\fxj (xj, xms) -> calcLagrangeTerm q fxj xj xms) shares terms in
   sum lagrangeTerms `mod` q
 
 createCommitments :: Polynomial -> Generator -> Group -> [Integer]
@@ -131,18 +132,12 @@ createCommitments poly g q = map (\a -> g^a `mod` q) poly
 
 createShares :: Polynomial -> Integer -> Group -> [Share]
 createShares poly parties group = 
-  map ((`mod` group) . evaluatePoly poly) [1..parties]
+  map (\i -> evaluatePoly poly i `mod` group) [1..parties]
 
-verifyShare :: [Integer] -> Share -> Generator -> Int -> Group -> (Integer, Integer)
-verifyShare commitments share g i group = (x, y)
-    where x = g^share `mod` group
-          y = mod (product vals) group
-          vals = map2 (^) commitments commitPowers
-          commitPowers = map ((`mod` p) . (i'^)) [0 .. length commitments - 1]
-          p = (group - 1) `div` 2
-          i' = fromIntegral i :: Integer
-          map2 f l1 l2  = map (uncurry f) $ l1 `zip` l2
-
+calculateFeldmanProduct :: [Integer] -> Generator -> Integer -> Group -> Integer
+calculateFeldmanProduct commitments g i group = product vals `mod` group
+    where vals = map2 (^) commitments commitPowers
+          commitPowers = map (i^) [0..]
 
 -- IO 
 prompt :: String -> IO Integer
@@ -192,8 +187,8 @@ query state = do
 handleQuery :: State -> String -> IO State
 handleQuery state "initialize" = initialize
 handleQuery state "help" = printHelp >> return state
-handleQuery s@(State{}) "exit" = 
-  return $ s {exitFlag = True}
+handleQuery state "exit" = 
+  return $ state {exitFlag = True}
 handleQuery state "print" = print state >> return state
 
 -- Parameterized queries
@@ -209,8 +204,11 @@ handleQuery state query
       return state
   | command == "verify" = do
       let party = read parameter :: Int
-      let share = (shares state) !! (party - 1)
-      let (x, y) = verifyShare (commitments state) share (generator state) party (group state)
+      let share = shares state !! (party - 1)
+      let order = group state
+      let g = generator state
+      let x = calculateFeldmanProduct (commitments state) g (fromIntegral party) order
+      let y = g^share `mod` order
       putStrLn $ show (generator state) ++ "^P(" ++ show party ++ ") = " ++ show x ++ (if x == y then " true" else " false")
       return state
   | command == "change_share" = do
@@ -224,8 +222,8 @@ handleQuery state query
         return state
     where (command, parameter) = break (==' ') query
 
-change i list v = 
-  let (pf, _:sf) = splitAt i list in pf ++ (v:sf)
+change i list v = pf ++ (v:sf)
+  where (pf, _:sf) = splitAt i list
 
 -- Cute tiny entrypoint 
 main = query emptyState
