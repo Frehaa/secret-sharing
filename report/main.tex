@@ -17,6 +17,7 @@
 \usepackage{minted}
 \usepackage{booktabs}
 \usepackage{multirow}
+\usepackage[bottom]{footmisc}
 
 \usepackage{xstring}
 
@@ -39,6 +40,7 @@ simulate a party verifying their share, and change a party's share to see how
 the results of the former commands would change.
 
 \begin{figure}[h]
+\label{fig:help}
 \center
 \includegraphics[width=0.8\textwidth]{img/help-ss.png}
 \caption{The applications help message which displays the available commands.}
@@ -49,6 +51,7 @@ to reconstruct, the number of parties participating, as well as the random seed
 used by the protocol.
 
 \begin{figure}[h]
+\label{fig:initialize-secret-sharing}
 \center
 \includegraphics[width=0.8\textwidth]{img/initialize-print-ss.png}
 \caption{A new secret sharing session established with the polynomial created, 
@@ -68,13 +71,59 @@ relating it to the code where it makes sense, and discuss the performance of it.
 \section{Theory}
 
 The application was made using theory from the Shamir's Secret Sharing
-algorithm, as well as Feldman's scheme to make it verifiable. 
+scheme, as well as Feldman's scheme to make it verifiable. 
 
-Shamir's Secret Sharing algorithm works by creating an n-degree polynomial,
+\subsection{Shamir Secret Sharing Polynomial}
+
+Shamir's Secret Sharing scheme works by creating an n-degree polynomial,
 using the secret as the intersect, to ensure that you need $n+1$ points from the
 polynomial to reconstruct it. This way all parties can get their own point on
 the polynomial as their share, and would have to group up with other parties to
-have enough different points to reconstruct.
+have enough different points to reconstruct. This is an efficient way of
+achieving k-out-of-n threshold secret sharing since every party only needs to
+know a single point on the polynomial, which has the same size as the secret
+itself.
+
+The scheme works over a finite field $F$ from which the secret, $S$, is an
+element of. After picking the secret we select $n$ random elements $a_1, a_2,
+..., a_n$ in the field to create an n-degree polynomial. Using the secret as
+intersect, and the other elements as the other coefficients in the polynomial
+$p(x) = S + a_1x + a_2x^2 + ... + a_nx^n$.
+
+I have implemented the scheme over integers and the polynomials are represented
+as lists of integers. So using the secret as the intersect I create polynomials
+as seen in figure~\pageref{fig:create-polynomial} by selecting $n$ numbers
+randomly generated in the range between $1$ and $q-1$ where $q$ is a prime
+number representing the group, implying $q-1$ is the order of the group.
+\footnotemark
+
+\newpage
+
+\begin{figure}[h]
+\label{fig:create-polynomial}
+\begin{minted}[fontsize=\footnotesize]{haskell}
+createPolynomial :: (RandomGen g) => Integer -> Int -> g -> Group -> Polynomial
+createPolynomial intersect degree gen q =
+    intersect : take degree (randomRs (1, q-1) gen)
+\end{minted}
+\caption{Code snippet for polynomial creation.}
+\end{figure}
+
+\footnotetext{A point of note here is that the numbers are selected slightly
+differenly from how to select the secret, due to how Feldman's scheme works. But
+I will come back to this when describing Feldman's scheme.}
+
+\subsection{Party shares}
+
+With a polynomial to represent the secret, the shares given to the parties can
+then be calculated by evaluating the polynomial for values $i, i+1, i+2, ...$
+and giving party $i$ the share $p(i)$, with $i > 0$. To make sure the shares
+don't leak unnecessary information, the parties don't get $p(i)$, but a slighly
+modified $p(i)\ mod\ q$ such that the shares themselves are quaranteed to be
+part of the finite field. Here it is assumed that party $i$ knows the $i$
+corresponding to themself.
+
+\subsection{Reconstructing the Secret}
 
 \section{Performance}
 
