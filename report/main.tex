@@ -28,10 +28,61 @@
 \begin{document} 
 
 \input{title_page}
-\tableofcontents
 \newpage
 
-\section{Some Section} 
-\subsection{Some sub section}
+\section{Introduction} 
+
+The project is a simple interactive console application, which lets the user
+simulate the parties of a verifiable secret sharing protocol. The user can
+create a new secret sharing session, simulate parties reconstructing the secret,
+simulate a party verifying their share, and change a party's share to see how
+the results of the former commands would change.
+
+\begin{figure}[h]
+\center
+\includegraphics[width=0.8\textwidth]{img/help-ss.png}
+\caption{The applications help message which displays the available commands.}
+\end{figure}
+
+When initializing, the user can specify the secret, the number of parties needed
+to reconstruct, the number of parties participating, as well as the random seed
+used by the protocol.
+
+\begin{figure}[h]
+\center
+\includegraphics[width=0.8\textwidth]{img/initialize-print-ss.png}
+\caption{A new secret sharing session established with the polynomial created, 
+         the generator g, the parties shares, and the commitments.}
+\end{figure}
+
+The application was made using Haskell, a purely functional programming
+language, using nothing but standard libraries, and implementing the necessary
+cryptographic operations by hand. Haskell supports arbitrarily large integer
+values almost seemlessly which makes creating polynomials of 1024 bits large
+integers trivial. To generate the large primes used by the application I used
+OpenSSL version 1.1.1.
+
+For the next sections I will cover the theory used to implement the application,
+relating it to the code where it makes sense, and discuss the performance of it.
+
+\section{Theory}
+
+The application was made using theory from the Shamir's Secret Sharing
+algorithm, as well as Feldman's scheme to make it verifiable. 
+
+Shamir's Secret Sharing algorithm works by creating an n-degree polynomial,
+using the secret as the intersect, to ensure that you need $n+1$ points from the
+polynomial to reconstruct it. This way all parties can get their own point on
+the polynomial as their share, and would have to group up with other parties to
+have enough different points to reconstruct.
+
+\section{Performance}
+
+While good performance wasn't a goal of this project, and there are no messages
+being transmitted over the network, it is still interesting to see how fast it
+is to reconstruct and verify different configurations of the protocol.
+
+\subsection{Reconstruct}
+\subsection{Verify}
 
 \end{document} 
