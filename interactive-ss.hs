@@ -81,8 +81,8 @@ selectGroup :: Integer -> Integer
 selectGroup value = fromJust $ find (> value) safePrimes 
 
 selectGenerator :: (RandomGen g) => g -> Integer -> Integer
-selectGenerator gen group = r^2 `mod` group
-      where (r, _) = randomR (2, group-1) gen
+selectGenerator gen q = r^2 `mod` q
+      where (r, _) = randomR (2, q-1) gen
 
 createPolynomial :: (RandomGen g) => Integer -> Int -> g -> Group -> Polynomial 
 createPolynomial intersect degree gen q = 
@@ -131,11 +131,11 @@ createCommitments :: Polynomial -> Generator -> Group -> [Integer]
 createCommitments poly g q = map (\a -> g^a `mod` q) poly
 
 createShares :: Polynomial -> Integer -> Group -> [Share]
-createShares poly parties group = 
-  map (\i -> evaluatePoly poly i `mod` group) [1..parties]
+createShares poly parties q = 
+  map (\i -> evaluatePoly poly i `mod` q) [1..parties]
 
 calculateFeldmanProduct :: [Integer] -> Generator -> Integer -> Group -> Integer
-calculateFeldmanProduct commitments g i group = product vals `mod` group
+calculateFeldmanProduct commitments g i q = product vals `mod` q
     where vals = map2 (^) commitments commitPowers
           commitPowers = map (i^) [0..]
 
