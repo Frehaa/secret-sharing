@@ -4,8 +4,9 @@ import Control.Monad
 import Data.Maybe (fromJust)
 import Data.List hiding (group)
 
+import Debug.Trace (traceShow)
+
 -- Helper types
--- p
 type Polynomial = [Integer]
 type Share = Integer
 type Generator = Integer
@@ -13,6 +14,16 @@ type Group = Integer
 
 -- Helper function
 map2 = zipWith
+
+powerMod :: Integer -> Integer -> Integer -> Integer
+powerMod b e m = x
+  where (_, _, x) = until cond step (b, e, 1)
+        cond (_, e, _) = e <= 0
+        isOdd = (/= 0) . (`mod` 2)
+        step (b, e, x) = 
+          ( b * b `mod` m,
+            e `div` 2,
+            if isOdd e then b * x `mod` m else x)
 
 -- State for managing all necessary values
 data State = State { 
@@ -126,7 +137,7 @@ reconstruct shares parties q = sum lagrangeTerms `mod` q
         lagrangeTerms = map2 (\fxj (xj, xms) -> calcLagrangeTerm q fxj xj xms) selectedShares terms
 
 createCommitments :: Polynomial -> Generator -> Group -> [Integer]
-createCommitments poly g q = map (\a -> g^a `mod` q) poly
+createCommitments poly g q = map (\a -> powerMod g a q) poly
 
 createShares :: Polynomial -> Integer -> Group -> [Share]
 createShares poly parties q = 
@@ -134,8 +145,8 @@ createShares poly parties q =
 
 calculateFeldmanProduct :: [Integer] -> Generator -> Integer -> Group -> Integer
 calculateFeldmanProduct commitments g i q = product vals `mod` q
-    where vals = map2 (^) commitments commitPowers
-          commitPowers = map (`mod` q) . map (i^) $ [0..]
+    where vals = map2 (\c p -> powerMod c p q) commitments commitPowers
+          commitPowers = map (i^) $ [0..]
 
 -- IO 
 prompt :: String -> IO Integer
@@ -206,7 +217,7 @@ handleQuery state query
       let order = group state
       let g = generator state
       let x = calculateFeldmanProduct (commitments state) g (fromIntegral party) order
-      let y = g^share `mod` order
+      let y = powerMod g share order
       putStrLn $ show (generator state) ++ "^P(" ++ show party ++ ") = " ++ show x ++ (if x == y then " true" else " false")
       return state
   | command == "change_share" = do
