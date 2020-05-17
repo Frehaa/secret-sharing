@@ -42,7 +42,7 @@ the results of the former commands would change.
 \begin{figure}[h]
 \label{fig:help}
 \center
-\includegraphics[width=0.8\textwidth]{img/help-ss.png}
+% \includegraphics[width=0.8\textwidth]{img/help-ss.png}
 \caption{The applications help message which displays the available commands.}
 \end{figure}
 
@@ -53,7 +53,7 @@ used by the protocol.
 \begin{figure}[h]
 \label{fig:initialize-secret-sharing}
 \center
-\includegraphics[width=0.8\textwidth]{img/initialize-print-ss.png}
+% \includegraphics[width=0.8\textwidth]{img/initialize-print-ss.png}
 \caption{A new secret sharing session established with the polynomial created, 
          the generator g, the parties shares, and the commitments.}
 \end{figure}
@@ -90,7 +90,8 @@ element of. After picking the secret we select $n$ random elements $a_1, a_2,
 intersect, and the other elements as the other coefficients in the polynomial
 $p(x) = S + a_1x + a_2x^2 + ... + a_nx^n$.
 
-I have implemented the scheme over integers and the polynomials are represented
+I have implemented the scheme over the multiplicative group of integers modulo
+q, and the polynomials are represented
 as lists of integers. So using the secret as the intersect I create polynomials
 as seen in figure~\pageref{fig:create-polynomial} by selecting $n$ numbers
 randomly generated in the range between $1$ and $q-1$ where $q$ is a prime
@@ -126,18 +127,25 @@ corresponding to themself.
 \subsection{Reconstructing the Secret}
 
 To reconstruct the secret the parties share their points on the polynomial to
-recreate it. Usually this is done using Lagrange interpolation since it works in
+recreate it, usually using Lagrange interpolation since it works in
 finite fields.
 
 Lagrange interpolation is calcuated as follows:
 
-% Insert formula
+$L(x) := \Sigma_{j=0}^k y_j l_j(x)$
+
+where 
+$l_j(x) := \Pi_{0 \leq m \leq k, m \neq j}\frac{x - x_m}{x_j - x_m}$
+and $k+1$ is the number of shares used to reconstruct. 
 
 Since we aren't interested in the whole polynomial, but just the intersect, it
-can be modified to be slightly more direct and efficient.
+can be modified to be slightly more direct and efficient, by not including the
+variable $x$ in the equation, and flipping the values in the denominator.
 
-In the implementation I have used eGCD to calculate the inverses of the elements
-needed to do the ``division`` in formula. 
+$l_j(x) := \Pi_{0 \leq m \leq k, m \neq j}\frac{x_m}{x_m - x_j}$
+
+In the implementation I have used the Extended GCD algorithm to calculate 
+the inverses of the elements needed to do the ``division`` in formula.
 
 \subsection{Verifying the shares}
 
@@ -154,11 +162,38 @@ that addition in the exponent follows some slightly different rules, to give an
 equation where party $i$ can verify that their share and the commitments match
 up. 
 
+Since the group has to be prime order and I'm working on the multiplicative
+group of integers modulo $q$, the prime $q$ I'm using is a safe-prime, meaning
+it has the form $q = 2 \cdot p + 1$ where both $p$ and $q$ are primes. To create
+a prime order subgroup from this I take the quadratic residue modulo $q$ of all
+elements in the multiplicative group, and this forms the subgroup. From this I
+can pick a generator at random since every element in the subgroup except $1$ is
+a generator. In the code this is implemented by selecting an element uniformly
+at random from the multiplicative group and calculating the generator as the
+quadratic residue modulo $q$ as seen in figure~\pageref{fig:select-generator}.
+
+\begin{figure}[h]
+\label{fig:select-generator}
+\begin{minted}[fontsize=\footnotesize]{haskell}
+selectGenerator :: (RandomGen g) => g -> Integer -> Integer
+selectGenerator gen q = r^2 `mod` q
+        where (r, _) = randomR (2, q-1) gen
+\end{minted}
+\caption{Code snippet for selecting generator for subgroup.}
+\end{figure}
+
+
 
 % ... 
 
 When implemented over integers, at least in my application, this is
 excrutiatingly slow for even small groups eg. 16 bit. 
+
+\subsection{Primes}
+
+The implementation uses more than a single prime. Dependin on the secret the
+smallest working prime is picked. The primes used are of 8, 16, 32, 64, 128,
+256, 512, and 1024 bits of length.
 
 \section{Performance}
 
