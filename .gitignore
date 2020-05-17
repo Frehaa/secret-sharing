@@ -3,8 +3,5 @@
 !.gitignore
 !gen_test.py
 !*/
-!*/main.tex
-!*/title_page.tex
-!**/logo.jpg
 
 
