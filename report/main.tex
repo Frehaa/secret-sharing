@@ -1,11 +1,8 @@
 \documentclass[a4paper,oneside,12pt,final]{article} 
 \usepackage[utf8]{inputenc} 
-\usepackage{graphics} 
-\usepackage{listings}
 
 \usepackage{graphicx}
 \usepackage{amsmath}
-\usepackage{amssymb}
 \usepackage{bm}
 \usepackage{wrapfig}
 \usepackage{float}
@@ -34,15 +31,15 @@
 \section{Introduction} 
 
 The project is a simple interactive console application, which lets the user
-simulate the parties of a verifiable secret sharing protocol. The user can
-create a new secret sharing session, simulate parties reconstructing the secret,
-simulate a party verifying their share, and change a party's share to see how
-the results of the former commands would change.
+simulate the parties of a verifiable secret sharing protocol for educational
+purposes. The user can create a new secret sharing session, simulate parties
+reconstructing the secret, simulate a party verifying their share, and change a
+party's share to see how the results of the former commands would change.
 
 \begin{figure}[h]
 \label{fig:help}
 \center
-% \includegraphics[width=0.8\textwidth]{img/help-ss.png}
+\includegraphics[width=0.8\textwidth]{img/help-ss.png}
 \caption{The applications help message which displays the available commands.}
 \end{figure}
 
@@ -53,9 +50,9 @@ used by the protocol.
 \begin{figure}[h]
 \label{fig:initialize-secret-sharing}
 \center
-% \includegraphics[width=0.8\textwidth]{img/initialize-print-ss.png}
+\includegraphics[width=0.8\textwidth]{img/initialize-print-ss.png}
 \caption{A new secret sharing session established with the polynomial created, 
-         the generator g, the parties shares, and the commitments.}
+         the generator $g$, the party's shares, and the commitments.}
 \end{figure}
 
 The application was made using Haskell, a purely functional programming
@@ -91,14 +88,14 @@ intersect, and the other elements as the other coefficients in the polynomial
 $p(x) = S + a_1x + a_2x^2 + ... + a_nx^n$.
 
 I have implemented the scheme over the multiplicative group of integers modulo
-q, and the polynomials are represented
-as lists of integers. So using the secret as the intersect I create polynomials
-as seen in figure~\pageref{fig:create-polynomial} by selecting $n$ numbers
-randomly generated in the range between $1$ and $q-1$ where $q$ is a prime
-number representing the group, implying $q-1$ is the order of the group.
-\footnotemark
+q, and the polynomials are represented as lists of integers. So using the secret
+as the intersect I create polynomials as seen in figure 3 by selecting $n$
+numbers randomly generated in the range between $1$ and $q-1$ where $q$ is a
+prime number representing the group.
 
-\newpage
+A point of note here is that the numbers are selected slightly
+differenly from how to select the secret, due to how Feldman's scheme works. But
+I will come back to this when describing Feldman's scheme.
 
 \begin{figure}[h]
 \label{fig:create-polynomial}
@@ -109,10 +106,6 @@ createPolynomial intersect degree gen q =
 \end{minted}
 \caption{Code snippet for polynomial creation.}
 \end{figure}
-
-\footnotetext{A point of note here is that the numbers are selected slightly
-differenly from how to select the secret, due to how Feldman's scheme works. But
-I will come back to this when describing Feldman's scheme.}
 
 \subsection{Party shares}
 
@@ -132,20 +125,47 @@ finite fields.
 
 Lagrange interpolation is calcuated as follows:
 
-$L(x) := \Sigma_{j=0}^k y_j l_j(x)$
+\[
+L(x) := \sum_{j=0}^k y_j l_j(x)
+\]
 
-where 
-$l_j(x) := \Pi_{0 \leq m \leq k, m \neq j}\frac{x - x_m}{x_j - x_m}$
-and $k+1$ is the number of shares used to reconstruct. 
+where $l_j(x)$ is defined as:
+\[
+l_j(x) := \sum\limits_{\substack{0\leq m \leq k\\m \neq j}}\frac{x - x_m}{x_j - x_m}
+\]
+
+and $k+1$ is the number of shares used to reconstruct, $y_j$ is the share at
+point $x_j$. 
 
 Since we aren't interested in the whole polynomial, but just the intersect, it
 can be modified to be slightly more direct and efficient, by not including the
 variable $x$ in the equation, and flipping the values in the denominator.
 
-$l_j(x) := \Pi_{0 \leq m \leq k, m \neq j}\frac{x_m}{x_m - x_j}$
+\[
+l_j(x) := \sum\limits_{\substack{0\leq m \leq k\\m \neq j}}\frac{x_m}{x_m - x_j}
+\]
 
-In the implementation I have used the Extended GCD algorithm to calculate 
-the inverses of the elements needed to do the ``division`` in formula.
+The central parts of the calculations are given in figure 4. In the
+implementation I have used the Extended GCD algorithm to calculate the inverses
+of the elements needed to do the ``division`` in formula. 
+
+\begin{figure}[h]
+\label{fig:calculate-lagrange}
+\begin{minted}[fontsize=\footnotesize]{haskell}
+calcLagrangeTerm :: Group -> Integer -> Integer -> [Integer] -> Integer
+calcLagrangeTerm q fxj xj xms = fxj * product ljx
+  where ljx = map (\xm -> xm // (xm - xj)) xms
+        (//) n m = n * calcInverse m q
+
+reconstruct :: [Share] -> [Int] -> Group -> Integer
+reconstruct shares parties q = sum lagrangeTerms `mod` q
+  where selectedShares = map (\p -> shares !! (p-1)) parties
+        terms = termElems $ map fromIntegral parties  
+        lagrangeTerms = 
+            map2 (\fxj (xj, xms) -> calcLagrangeTerm q fxj xj xms) selectedShares terms
+\end{minted}
+\caption{Code snippet for calculating Lagrange Interpolation.}
+\end{figure}
 
 \subsection{Verifying the shares}
 
@@ -156,21 +176,22 @@ Secret Sharing scheme and Feldman's scheme. In Feldman's scheme we calculate an
 additional $n+1$ values for our $n$-degree polynomial using a prime order
 subgroup and a generator from this group. 
 
-In this scheme the coefficients we picked for our polynomial have to be part of
-this subgroup otherwise the scheme doesn't work. Feldman's scheme uses the fact
-that addition in the exponent follows some slightly different rules, to give an
-equation where party $i$ can verify that their share and the commitments match
-up. 
+In this scheme the coefficients we picked for our polynomial have to be smaller
+than the order of the subgroup otherwise the scheme doesn't work. Feldman's
+scheme uses the fact that addition in the exponent follows some slightly
+different rules, to give an equation where party $i$ can verify that their share
+and the commitments match up. 
 
 Since the group has to be prime order and I'm working on the multiplicative
 group of integers modulo $q$, the prime $q$ I'm using is a safe-prime, meaning
 it has the form $q = 2 \cdot p + 1$ where both $p$ and $q$ are primes. To create
 a prime order subgroup from this I take the quadratic residue modulo $q$ of all
-elements in the multiplicative group, and this forms the subgroup. From this I
-can pick a generator at random since every element in the subgroup except $1$ is
-a generator. In the code this is implemented by selecting an element uniformly
-at random from the multiplicative group and calculating the generator as the
-quadratic residue modulo $q$ as seen in figure~\pageref{fig:select-generator}.
+elements in the multiplicative group, and this forms the subgroup, which has
+order $p$. From this I can pick a generator at random since every element in the
+subgroup except $1$ is a generator. In the code this is implemented by selecting
+an element uniformly at random from the multiplicative group and calculating the
+generator as the quadratic residue modulo $q$ as seen in
+figure 5.
 
 \begin{figure}[h]
 \label{fig:select-generator}
@@ -179,21 +200,90 @@ selectGenerator :: (RandomGen g) => g -> Integer -> Integer
 selectGenerator gen q = r^2 `mod` q
         where (r, _) = randomR (2, q-1) gen
 \end{minted}
-\caption{Code snippet for selecting generator for subgroup.}
+\caption{Code snippet for selecting generator for prime order subgroup.}
+\end{figure}
+
+In Feldman's scheme we use the generator $g$ and the coefficients from the
+polynomial $S, a_1, a_2, ..., a_n$ to calculate the commitments $c_0, c_1, ...,
+c_n = g^S, g^{a_1}, g^{a_2}, ..., g^{a_n}$. The commitments are shared to the
+parties who can verify among themselves that they have the same commitments,
+without revealing their share. To verify their share, a party $i$ can then
+calculate $c_0^{i^0}\cdot c_1^{i^1} \cdot c_2^{i^2} \cdot ... \cdot c_n^{i^n}$
+and compare it to $g^{p(i)}$ where $p(i)$ is their share. This works since:
+
+$g^{p(i)} = g^{S + a_1\cdot i + a_2 \cdot i^2 + ... + a_n \cdot i^n} = 
+g^{S}\cdot g^{a_1 \cdot {i^1}} \cdot g^{a_2 \cdot {i^2}} \cdot ... \cdot g^{a_n
+\cdot {i^n}} = $
+
+$
+g^{S^{i^0}}\cdot g^{a_1^{i^1}} \cdot g^{a_2^{i^2}} \cdot ... \cdot g^{a_n^{i^n}} = 
+c_0^{i^0}\cdot c_1^{i^1} \cdot c_2^{i^2} \cdot ... \cdot c_n^{i^n}$
+
+The reason we use two different primes is that while omitted in the calculations
+for clarity, everything is calculated in the subgroup generated by the generator
+$g$, so in reality it is $g^{p(i)\ mod\ p}\ mod\ q$ since the generator is used
+to generator a group of prime order $p$, we know that $g^p = 1$ which implies
+$g^a = g^{a\ mod\ p}$.
+
+As is, this scheme would leak information on the secret $S$ so a minor
+modification of the scheme is usually done to prevent this, but this was beyond
+the scope of this project.
+
+Since this scheme uses a lot of exponentiation I have implemented a function for
+faster modular exponentiation. Without using this, relatively small calculations
+like $45384516^{1464645052}$ wouldn't even complete before the process was
+killed.
+
+From this I have implemented the calculations as seen in figure 6.
+
+\begin{figure}[h]
+\label{fig:calculate-feldman}
+\begin{minted}[fontsize=\footnotesize]{haskell}
+calculateFeldmanProduct :: [Integer] -> Generator -> Integer -> Group -> Integer
+calculateFeldmanProduct commitments g i q = product vals `mod` q
+    where vals = map2 (\c p -> powerMod c p q) commitments commitPowers
+          commitPowers = map (i^) $ [0..]
+\end{minted}
+\caption{Code snippet for calculating Feldman's product.}
 \end{figure}
 
 
-
-% ... 
-
-When implemented over integers, at least in my application, this is
-excrutiatingly slow for even small groups eg. 16 bit. 
-
 \subsection{Primes}
 
-The implementation uses more than a single prime. Dependin on the secret the
-smallest working prime is picked. The primes used are of 8, 16, 32, 64, 128,
-256, 512, and 1024 bits of length.
+The implementation uses more than a single prime. Depending on the secret the
+smallest working prime is picked for demonstrational purposes. The primes used
+are of 8, 16, 32, 64, 128, 256, 512, and 1024 bits of length, and generated
+using the command ``openssl prime -generate -safe -bits [size]''
+
+As a consequence of using hard-coded primes the application doesn't work for
+secrets bigger than the largest prime, but for the purposes of this application
+it should be more than necessary. 
+
+For the sake of completeness the primes are included in figure 7.
+\begin{figure}[ht]
+\label{fig:primes}
+\center
+\begin{tabular}{ l l }
+Bits & Prime \\
+8    & 227 \\
+16   & 51407 \\
+32   & 3260360843 \\
+64   & 16855205958470386187\\
+128  & 336809720957688272968116945989114351147 \\
+256  & 10093244343192998281619872079169332717505060290270351828012\\
+     & 8748060882240133359 \\
+512  & 12754709477010474220782419068422931704491832184660376415376\\
+     & 49129662835681510280325117671740229982353299299584844280080\\
+     & 7715447900267393272594855354516567627 \\
+1024 & 17515023902464469416169064215919178191091046333390979796239\\
+     & 96411136449740117840979007830349408818890443448677163307017\\
+     & 16017301210554996353255650234107823397774674975724010953046\\
+     & 91178561758182117442207104772836842423542561213945128553213\\
+     & 36806373141154311947173292682082569803172939028042913706998\\
+     & 09368006311239
+\end{tabular}
+\caption{Safe prime numbers used by the application to perform the scheme.}
+\end{figure}
 
 \section{Performance}
 
@@ -201,13 +291,79 @@ While good performance wasn't a goal of this project, and there are no messages
 being transmitted over the network, it is still interesting to see how fast it
 is to reconstruct and verify different configurations of the protocol.
 
+For the tests I will be running all the different prime numbers, for groups of
+increasing size 5, 10, 50, 100, 500, and 1000. The tests will be split into 2
+groups, 1 for reconstructing the secret, the other for a single party verifying
+their secret. To time the tests I will user the unix time command and take the
+user time. In total there are 96 tests split between the two groups. No tests
+are repeated and no averages, median, standard deviation, etc. is used. This is
+simply to give a rough idea of the time to compute the schemes.
+
+One minor thing to note is that the tests for 500 and 1000 parties for the 8 bit
+prime doesn't return the correct result since there are more parties than the
+prime can contain. The time is still included since the calculations are still
+the same, even though they result in the wrong secret being reconstructed.
+
 \subsection{Reconstruct}
 
-% Setup some test for different sized primes / number of parties
+The results of the tests are given in figure 8. Reconstructing the secret is
+reasonably fast even for the largest test group. The biggest contributing factor
+to the time to reconstruct seems to be the number of parties involved. With the
+time to reconstruct even a 1024 secret being negligible. For the numbers which
+don't fit inside a standard 64 bit integer the time also seems to roughly double
+as the bitsize doubles. 
+
+\begin{figure}[h]
+\label{fig:reconstruct-test-results}
+\center
+\textbf{Prime size}\\[0.5em]
+\textbf{Parties}
+\begin{tabular}{l|cccccccc}
+     & 8    & 16    & 32    & 64    & 128   & 256   & 512   & 1024  \\
+\hline
+5    & 5    &  1    &  1    &  1    &  1    & 1     & 0     & 0     \\
+10   & 6    &  1    &  0    &  1    &  1    & 1     & 1     & 2     \\
+50   & 22   &  3    &  5    &  6    &  7    & 7     & 7     & 20    \\
+100  & 24   &  21   &  21   &  22   &  23   & 33    & 56    & 126   \\
+500  & 708  &  844  &  934  &  931  &  1222 & 2040  & 4778  & 13583 \\
+1000 & 4197 &  5603 &  4923 &  5434 &  7752 & 14143 & 36140 & 106197\\
+\end{tabular}
+\caption{Performance tests for reconstructing the shared secret using 
+         Lagrange Interpolation. The results are given in milliseconds}
+\end{figure}
 
 \subsection{Verify}
 
-% Setup some test for different sized primes / number of parties
-% Here the size of the primes will be very small, don't overdo
+The results of the tests are given in figure 9.
+Since I am only testing the time for a single party to verify their share the
+party picked is the party $\lfloor party / 2\rfloor$. 
+
+The results show that verifying the share is faster than reconstructing the
+secret for the most part.
+
+\begin{figure}
+\label{fig:verify-test-results}
+\center
+\textbf{Prime size}\\[0.5em]
+\textbf{Parties}
+\begin{tabular}{l|cccccccc}
+     & 8    & 16    & 32    & 64    & 128   & 256   & 512   & 1024  \\
+\hline
+5    & 0    &  1    & 1     & 1     & 0     & 2     & 3    & 8      \\
+10   & 5    &  1    & 1     & 1     & 10    & 2     & 5    & 15     \\
+50   & 7    &  3    & 0     & 0     & 5     & 9     & 16   & 58     \\
+100  & 14   &  8    & 9     & 12    & 15    & 17    & 49   & 152    \\
+500  & 465  &  450  & 467   & 591   & 634   & 765   & 1069 & 2034   \\
+1000 & 3375 &  3347 & 3370  & 3990  & 4121  & 4618  & 5631 & 8850   \\
+\end{tabular}
+\caption{Performance test for verifying a single party's share using Feldman's
+         scheme. The results are given in milliseconds.}
+\end{figure}
+
+\section{Code}
+
+Here is included the full source code of the project.
+
+\inputminted{haskell}{../interactive-ss.hs}
 
 \end{document} 

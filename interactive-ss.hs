@@ -133,7 +133,7 @@ eGCD a b
 reconstruct :: [Share] -> [Int] -> Group -> Integer
 reconstruct shares parties q = sum lagrangeTerms `mod` q
   where selectedShares = map (\p -> shares !! (p-1)) parties
-        terms = termElems . map fromIntegral $ parties 
+        terms = termElems $ map fromIntegral parties 
         lagrangeTerms = map2 (\fxj (xj, xms) -> calcLagrangeTerm q fxj xj xms) selectedShares terms
 
 createCommitments :: Polynomial -> Generator -> Group -> [Integer]
