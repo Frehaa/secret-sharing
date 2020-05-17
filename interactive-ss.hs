@@ -4,8 +4,8 @@ import Control.Monad
 import Data.Maybe (fromJust)
 import Data.List hiding (group)
 
-
 -- Helper types
+-- p
 type Polynomial = [Integer]
 type Share = Integer
 type Generator = Integer
@@ -66,7 +66,6 @@ stateCommitmentsString s =
 -- 2x 8 bits, 16 bits, etc. to 1024 bits safe primes
 -- Calculating commitments take unreasonable amount of time for larger primes
 safePrimes = [ 
-  167,
   227,
   51407,
   3260360843,
@@ -78,7 +77,7 @@ safePrimes = [
 
 
 selectGroup :: Integer -> Integer
-selectGroup value = fromJust $ find (> value) safePrimes 
+selectGroup value = fromJust $ find (> value * 2) safePrimes 
 
 selectGenerator :: (RandomGen g) => g -> Integer -> Integer
 selectGenerator gen q = r^2 `mod` q
@@ -122,9 +121,9 @@ eGCD a b
 
 reconstruct :: [Share] -> [Int] -> Group -> Integer
 reconstruct shares parties q = sum lagrangeTerms `mod` q
-  where shares = map (\p -> shares !! (p-1)) parties
+  where selectedShares = map (\p -> shares !! (p-1)) parties
         terms = termElems . map fromIntegral $ parties 
-        lagrangeTerms = map2 (\fxj (xj, xms) -> calcLagrangeTerm q fxj xj xms) shares terms
+        lagrangeTerms = map2 (\fxj (xj, xms) -> calcLagrangeTerm q fxj xj xms) selectedShares terms
 
 createCommitments :: Polynomial -> Generator -> Group -> [Integer]
 createCommitments poly g q = map (\a -> g^a `mod` q) poly
@@ -136,7 +135,7 @@ createShares poly parties q =
 calculateFeldmanProduct :: [Integer] -> Generator -> Integer -> Group -> Integer
 calculateFeldmanProduct commitments g i q = product vals `mod` q
     where vals = map2 (^) commitments commitPowers
-          commitPowers = map (i^) [0..]
+          commitPowers = map (`mod` q) . map (i^) $ [0..]
 
 -- IO 
 prompt :: String -> IO Integer
